@@ -504,9 +504,9 @@ void loadServerConfigFromString(char *config) {
         } else {
             int match = 0;
             for (deprecatedConfig *config = deprecated_configs; config->name != NULL; config++) {
-                if (!strcasecmp(argv[0], config->name) && 
-                    config->argc_min <= argc && 
-                    argc <= config->argc_max) 
+                if (!strcasecmp(argv[0], config->name) &&
+                    config->argc_min <= argc &&
+                    argc <= config->argc_max)
                 {
                     match = 1;
                     break;
@@ -572,7 +572,7 @@ void loadServerConfigFromString(char *config) {
              * These may include valid module configurations or invalid ones.
              * They will be validated later by loadModuleConfigs() against the
              * configurations declared by the loaded module(s). */
-            
+
             if (argc < 2) {
                 err = "Bad directive or wrong number of arguments";
                 goto loaderr;
@@ -838,7 +838,7 @@ void configSetCommand(client *c) {
             redactClientCommandArgument(c,2+i*2+1);
         }
 
-        /* We continue to make sure we redact all the configs */ 
+        /* We continue to make sure we redact all the configs */
         if (invalid_args) continue;
 
         if (config->flags & IMMUTABLE_CONFIG ||
@@ -872,7 +872,7 @@ void configSetCommand(client *c) {
         config_names[i] = config->name;
         new_values[i] = c->argv[2+i*2+1]->ptr;
     }
-    
+
     if (invalid_args) goto err;
 
     /* Backup old values before setting new ones */
@@ -980,7 +980,7 @@ void configGetCommand(client *c) {
 
         /* Otherwise, do a match against all items in the dictionary. */
         di = dictGetIterator(configs);
-        
+
         while ((de = dictNext(di)) != NULL) {
             standardConfig *config = dictGetVal(de);
             /* Note that hidden configs require an exact match (not a pattern) */
@@ -992,7 +992,7 @@ void configGetCommand(client *c) {
         }
         dictReleaseIterator(di);
     }
-    
+
     di = dictGetIterator(matches);
     addReplyMapLen(c, dictSize(matches));
     while ((de = dictNext(di)) != NULL) {
@@ -1124,7 +1124,7 @@ struct rewriteConfigState *rewriteConfigReadOldFile(char *path) {
     if (sb.st_size == 0) {
         fclose(fp);
         return state;
-    } 
+    }
 
     /* Load the file content */
     sds config = sdsnewlen(SDS_NOINIT,sb.st_size);
@@ -1193,7 +1193,7 @@ struct rewriteConfigState *rewriteConfigReadOldFile(char *path) {
             argv[0] = sdsnew(s_conf->alias);
         }
 
-        /* If this is sentinel config, we use sentinel "sentinel <config>" as option 
+        /* If this is sentinel config, we use sentinel "sentinel <config>" as option
             to avoid messing up the sequence. */
         if (server.sentinel_mode && argc > 1 && !strcasecmp(argv[0],"sentinel")) {
             sds sentinelOption = sdsempty();
@@ -1657,7 +1657,7 @@ sds getConfigDebugInfo(void) {
     state->force_write = 1; /* Force the output */
     state->needs_signature = 0; /* Omit the rewrite signature */
 
-    /* Iterate the configs and "rewrite" the ones that have 
+    /* Iterate the configs and "rewrite" the ones that have
      * the debug flag. */
     dictIterator *di = dictGetIterator(configs);
     dictEntry *de;
@@ -3186,7 +3186,7 @@ standardConfig static_configs[] = {
     createIntConfig("timeout", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.maxidletime, 0, INTEGER_CONFIG, NULL, NULL), /* Default client timeout: infinite */
     createIntConfig("replica-announce-port", "slave-announce-port", MODIFIABLE_CONFIG, 0, 65535, server.slave_announce_port, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("tcp-backlog", NULL, IMMUTABLE_CONFIG, 0, INT_MAX, server.tcp_backlog, 511, INTEGER_CONFIG, NULL, NULL), /* TCP listen backlog. */
-    createIntConfig("cluster-port", NULL, IMMUTABLE_CONFIG, 0, 65535, server.cluster_port, 0, INTEGER_CONFIG, NULL, NULL),    
+    createIntConfig("cluster-port", NULL, IMMUTABLE_CONFIG, 0, 65535, server.cluster_port, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("cluster-announce-bus-port", NULL, MODIFIABLE_CONFIG, 0, 65535, server.cluster_announce_bus_port, 0, INTEGER_CONFIG, NULL, updateClusterAnnouncedPort), /* Default: Use +10000 offset. */
     createIntConfig("cluster-announce-port", NULL, MODIFIABLE_CONFIG, 0, 65535, server.cluster_announce_port, 0, INTEGER_CONFIG, NULL, updateClusterAnnouncedPort), /* Use server.port */
     createIntConfig("cluster-announce-tls-port", NULL, MODIFIABLE_CONFIG, 0, 65535, server.cluster_announce_tls_port, 0, INTEGER_CONFIG, NULL, updateClusterAnnouncedPort), /* Use server.tls_port */
@@ -3303,7 +3303,7 @@ int registerConfigValue(const char *name, const standardConfig *config, int alia
     return dictAdd(configs, sdsnew(name), new) == DICT_OK;
 }
 
-/* Initialize configs to their default values and create and populate the 
+/* Initialize configs to their default values and create and populate the
  * runtime configuration dictionary. */
 void initConfigValues(void) {
     configs = dictCreate(&sdsHashDictType);
@@ -3328,20 +3328,20 @@ void removeConfig(sds name) {
     standardConfig *config = lookupConfig(name);
     if (!config) return;
     if (config->flags & MODULE_CONFIG) {
-        
+
         sdsfree((sds) config->name);
         sdsfree((sds) config->alias);
-        
+
         switch (config->type) {
             case BOOL_CONFIG:
                 break;
             case NUMERIC_CONFIG:
                 break;
             case SDS_CONFIG:
-                if (config->data.sds.default_value) 
+                if (config->data.sds.default_value)
                     sdsfree((sds)config->data.sds.default_value);
                 break;
-            case ENUM_CONFIG: 
+            case ENUM_CONFIG:
                 {
                     configEnum *enumNode = config->data.enumd.enum_value;
                     while(enumNode->name != NULL) {
@@ -3418,9 +3418,9 @@ void addModuleEnumConfig(sds name, sds alias, int flags, void *privdata, int def
             sc.data.enumd.enum_value[i].val = enum_vals[i].val;
         }
         sc.data.enumd.enum_value[num_enum_vals].name = NULL;
-        sc.data.enumd.enum_value[num_enum_vals].val = 0;        
+        sc.data.enumd.enum_value[num_enum_vals].val = 0;
         registerConfigValue(sc.alias, &sc, 1);
-    }    
+    }
 }
 
 /* On removeConfig(), it will free name, and alias if it is not NULL */

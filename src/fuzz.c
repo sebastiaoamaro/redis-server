@@ -105,84 +105,105 @@ static void *fuzz_thread_func(void *arg) {
     FILE *fp = NULL;
     int sock = -1;
 
-    /* Open file in binary mode to read raw RESP messages */
-    fp = fopen(a->input_file, "rb");
+    /* Open file in text mode and read line-by-line, sending each line as an inline
+     * Redis command (line\r\n). The loop tails the file: when EOF is reached it
+     * sleeps briefly and continues waiting for new lines to appear.
+     */
+    fp = fopen(a->input_file, "r");
     if (!fp) {
         fprintf(stderr, "fuzz: failed to open input file '%s': %s\n", a->input_file, strerror(errno));
-        goto cleanup;
-    }
-
-    /* Buffer for streaming binary data */
-    const size_t BUF_SZ = 4096;
-    unsigned char *buf = malloc(BUF_SZ);
-    if (!buf) {
-        fprintf(stderr, "fuzz: malloc buffer failed\n");
         goto cleanup;
     }
 
     /* Try to establish a connection before reading if possible */
     sock = connect_to_redis(a->host, a->port);
 
-    /* Read raw bytes and forward them to Redis as-is */
-    while (!feof(fp)) {
-        size_t nread = fread(buf, 1, BUF_SZ, fp);
-        if (nread == 0) {
-            if (ferror(fp)) {
-                fprintf(stderr, "fuzz: fread error: %s\n", strerror(errno));
+    char *line = NULL;
+    size_t linecap = 0;
+    ssize_t linelen;
+
+    while (1) {
+        /* Record current file position so we can rewind on send/connect failures */
+        long off = ftell(fp);
+
+        linelen = getline(&line, &linecap, fp);
+        if (linelen == -1) {
+            if (feof(fp)) {
+                /* No new line yet - sleep briefly and continue (tail -f behavior) */
                 clearerr(fp);
-                /* small backoff on read error */
                 struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000L }; /* 100ms */
                 nanosleep(&ts, NULL);
                 continue;
             } else {
-                break; /* EOF */
+                /* Some read error - log and back off */
+                fprintf(stderr, "fuzz: getline error: %s\n", strerror(errno));
+                clearerr(fp);
+                struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000L }; /* 100ms */
+                nanosleep(&ts, NULL);
+                continue;
             }
         }
 
-        /* Ensure connection; if not connected, attempt to connect, with retry */
+        /* Trim trailing newline/carriage return */
+        trim_newline(line);
+
+        /* Prepare payload: line + CRLF (inline command) */
+        size_t payload_len = strlen(line) + 2;
+        char *payload = malloc(payload_len + 1);
+        if (!payload) {
+            fprintf(stderr, "fuzz: malloc failed for payload\n");
+            /* On allocation failure, skip this line after a short backoff */
+            struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000L };
+            nanosleep(&ts, NULL);
+            continue;
+        }
+        memcpy(payload, line, strlen(line));
+        payload[strlen(line)] = '\r';
+        payload[strlen(line) + 1] = '\n';
+        payload[payload_len] = '\0';
+
+        /* Ensure connection; if not connected, attempt to connect, with retry.
+         * If connect fails, rewind file to re-read this line later.
+         */
         if (sock == -1) {
             sock = connect_to_redis(a->host, a->port);
             if (sock == -1) {
-                /* If we can't connect, wait a bit and retry */
                 struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
                 nanosleep(&ts, NULL);
-                /* Seek back by nread so we will resend this chunk after reconnect */
-                if (fseek(fp, -(long)nread, SEEK_CUR) == 0) {
+                if (fseek(fp, off, SEEK_SET) == 0) {
+                    free(payload);
                     continue;
                 } else {
-                    /* If fseek fails on this stream, just continue reading forward */
+                    /* If we can't rewind, drop the line and continue */
+                    free(payload);
                     continue;
                 }
             }
         }
 
-        /* Send the exact binary data read */
+        /* Send the payload, retrying on EINTR. On failure, close socket and rewind
+         * the file so the line is retried after reconnect.
+         */
         size_t sent_total = 0;
-        while (sent_total < nread) {
-            ssize_t s = send(sock, buf + sent_total, nread - sent_total, 0);
+        while (sent_total < payload_len) {
+            printf("SENT PAYLOAD:%s\n", payload);
+            ssize_t s = send(sock, payload + sent_total, payload_len - sent_total, 0);
             if (s < 0) {
                 if (errno == EINTR) continue;
                 fprintf(stderr, "fuzz: send failed: %s\n", strerror(errno));
                 close(sock);
                 sock = -1;
-                /* Rewind the file by the unsent portion so it's retried after reconnect */
-                if (sent_total > 0) {
-                    long rewind_bytes = (long)(nread - sent_total);
-                    if (fseek(fp, -rewind_bytes, SEEK_CUR) != 0) {
-                        /* if rewind fails, just continue */
-                    }
-                } else {
-                    /* nothing sent from this chunk, rewind whole chunk */
-                    if (fseek(fp, -(long)nread, SEEK_CUR) != 0) {
-                        /* can't rewind, continue */
-                    }
+                if (fseek(fp, off, SEEK_SET) != 0) {
+                    /* can't rewind - give up on rewinding this line */
                 }
                 break;
             }
             sent_total += (size_t)s;
         }
 
-        /* Optional small delay between chunks to avoid overwhelming server */
+        free(payload);
+
+        /* Optional small delay between lines to avoid overwhelming server */
         if (a->delay_ms > 0) {
             struct timespec ts;
             ts.tv_sec = a->delay_ms / 1000;
@@ -191,7 +212,7 @@ static void *fuzz_thread_func(void *arg) {
         }
     }
 
-    free(buf);
+    free(line);
 
 cleanup:
     if (sock != -1) close(sock);
@@ -232,6 +253,7 @@ int fuzz_server(char *input_file) {
     args->port = strdup(env_port ? env_port : DEFAULT_REDIS_PORT);
     args->delay_ms = delay_ms;
 
+    printf("INPUT_FILE:%s, HOST:%s, PORT:%s, DELAY_MS:%d\n", args->input_file, args->host, args->port, args->delay_ms);
     if (!args->input_file || !args->host || !args->port) {
         fprintf(stderr, "fuzz: strdup failed\n");
         free(args->input_file);
