@@ -50,7 +50,6 @@
 #include <sys/socket.h>
 
 
-#include "fuzz.h"
 
 #ifdef __linux__
 #include <sys/mman.h>
