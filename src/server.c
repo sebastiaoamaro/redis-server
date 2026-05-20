@@ -7319,8 +7319,8 @@ int main(int argc, char **argv) {
     int fuzz_mode = checkForFuzzMode(argc,argv,exec_name);
     char *fuzz_inputfile = NULL;
     if (fuzz_mode){
-        char* fuzz_inputfile = argv[2];
-        printf("STARTED WITH FUZZ_MODE ON, FILE is %s \n",fuzz_inputfile);
+        fuzz_inputfile = argv[3];
+        printf("STARTED WITH FUZZ_MODE ON, FILE:%s and ARGV[3]:%s \n",fuzz_inputfile,argv[3]);
     }
     initServerConfig();
     ACLInit(); /* The ACL subsystem must be initialized ASAP because the
@@ -7393,6 +7393,13 @@ int main(int argc, char **argv) {
         int argc_tmp;
         int handled_last_config_arg = 1;
         while(j < argc) {
+
+            if (!strcasecmp(argv[j],"--fuzz")){
+                j+=2;
+                printf("Found --fuzz skipping option \n");
+                continue;
+            }
+
             /* Either first or last argument - Should we read config from stdin? */
             if (argv[j][0] == '-' && argv[j][1] == '\0' && (j == 1 || j == argc-1)) {
                 config_from_stdin = 1;
