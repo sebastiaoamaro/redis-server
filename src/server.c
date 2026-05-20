@@ -6951,15 +6951,6 @@ int checkForSentinelMode(int argc, char **argv, char *exec_name) {
     return 0;
 }
 
-/* Returns 1 if there is --fuzz among the arguments or if
- * executable name contains "redis-sentinel". */
-int checkForFuzzMode(int argc, char **argv, char *exec_name) {
-    if (strstr(exec_name,"fuzz") != NULL) return 1;
-
-    for (int j = 1; j < argc; j++)
-        if (!strcmp(argv[j],"--fuzz")) return 1;
-    return 0;
-}
 
 /* Function called at startup to load RDB or AOF file in memory. */
 void loadDataFromDisk(void) {
@@ -7315,12 +7306,6 @@ int main(int argc, char **argv) {
     char *exec_name = strrchr(argv[0], '/');
     if (exec_name == NULL) exec_name = argv[0];
     server.sentinel_mode = checkForSentinelMode(argc,argv, exec_name);
-    int fuzz_mode = checkForFuzzMode(argc,argv,exec_name);
-    char *fuzz_inputfile = NULL;
-    if (fuzz_mode){
-        fuzz_inputfile = argv[3];
-        printf("STARTED WITH FUZZ_MODE ON, FILE:%s and ARGV[3]:%s \n",fuzz_inputfile,argv[3]);
-    }
     initServerConfig();
     ACLInit(); /* The ACL subsystem must be initialized ASAP because the
                   basic networking code and client creation depends on it. */
@@ -7393,11 +7378,6 @@ int main(int argc, char **argv) {
         int handled_last_config_arg = 1;
         while(j < argc) {
 
-            if (!strcasecmp(argv[j],"--fuzz")){
-                j+=2;
-                printf("Found --fuzz skipping option \n");
-                continue;
-            }
 
             /* Either first or last argument - Should we read config from stdin? */
             if (argv[j][0] == '-' && argv[j][1] == '\0' && (j == 1 || j == argc-1)) {
@@ -7592,10 +7572,6 @@ int main(int argc, char **argv) {
     redisSetCpuAffinity(server.server_cpulist);
     setOOMScoreAdj(-1);
 
-    if (fuzz_mode){
-        //Start new thread which reads from the file and uses a TCP client to send to this server.
-        fuzz_server(fuzz_inputfile);
-    }
     aeMain(server.el);
     aeDeleteEventLoop(server.el);
     return 0;
